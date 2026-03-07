@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+applied_jobs.csv
+external_apply_jobs.csv
+.venv/
+venv/
+.tool-versions
+.DS_Store
+.claude/
+AI_Interview_Tracker.xlsx
