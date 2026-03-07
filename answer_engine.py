@@ -93,18 +93,62 @@ def rule_answer(question: str, profile: dict) -> str | None:
     return None
 
 
-def _build_system_prompt(resume: str, available_options: list[str] | None) -> str:
+def _build_profile_block(profile: dict) -> str:
+    """Build structured profile text for the LLM from the profile dict."""
+    skills = profile.get("skills", {})
+    skills_str = ", ".join(f"{k}: {v}yr" for k, v in skills.items()) if skills else "N/A"
+
+    return (
+        f"Total experience: {profile.get('total_experience', 'N/A')} years\n"
+        f"Current CTC: {profile.get('current_ctc', 'N/A')}\n"
+        f"Expected CTC: {profile.get('expected_ctc', 'N/A')}\n"
+        f"Notice period: {profile.get('notice_period', 'N/A')}\n"
+        f"Current location: {profile.get('current_location', 'N/A')}\n"
+        f"Current company: {profile.get('current_company', 'N/A')}\n"
+        f"Qualification: {profile.get('qualification', 'N/A')}\n"
+        f"Native location: {profile.get('native_location', 'N/A')}\n"
+        f"Skills (with years of experience): {skills_str}\n"
+        f"Summary: {profile.get('resume_summary', '')}"
+    )
+
+
+_FEW_SHOT = (
+    "\n\nExamples of expected answers:\n"
+    'Q: "How many years of experience do you have in Python?" → A: "5"\n'
+    'Q: "What is your current CTC?" → A: "12 LPA"\n'
+    'Q: "Are you willing to relocate?" → A: "Yes"\n'
+    'Q: "What is your notice period?" → A: "30 days"\n'
+    'Q: "What is your highest qualification?" → A: "Bachelor of Engineering"\n'
+)
+
+_ANSWER_HINTS = (
+    "\n\nAnswer format rules:\n"
+    "- For 'how many years' questions: respond with a NUMBER ONLY (e.g. '3').\n"
+    "- For CTC/salary questions: respond with number + LPA (e.g. '12 LPA').\n"
+    "- For yes/no questions: respond with 'Yes' or 'No'.\n"
+    "- For location questions: respond with city name only.\n"
+    "- Never exceed 5 words. No explanations or sentences.\n"
+    "- Use ONLY the data provided in the profile. Do NOT guess or invent numbers.\n"
+)
+
+
+def _build_system_prompt(profile: dict, available_options: list[str] | None) -> str:
+    profile_block = _build_profile_block(profile)
+
     if available_options:
         return (
-            "You are answering a recruiter's chatbot question for a job application. "
-            f"You MUST pick EXACTLY one of these options: {available_options}. "
-            "Return ONLY the exact option text, nothing else. "
-            f"Based on this candidate profile: {resume}"
+            "You are answering a recruiter's chatbot question for a job application.\n"
+            f"You MUST pick EXACTLY one of these options: {available_options}.\n"
+            "Return ONLY the exact option text, nothing else.\n\n"
+            f"Candidate profile:\n{profile_block}"
+            f"{_FEW_SHOT}"
         )
     return (
-        "You are answering a recruiter's chatbot question for a job application. "
-        "Answer in 1-5 words only. No explanations, no sentences. Just the answer. "
-        f"Based on this candidate profile: {resume}"
+        "You are answering a recruiter's chatbot question for a job application.\n"
+        "Answer in 1-5 words only. No explanations, no sentences. Just the answer.\n\n"
+        f"Candidate profile:\n{profile_block}"
+        f"{_FEW_SHOT}"
+        f"{_ANSWER_HINTS}"
     )
 
 
@@ -125,7 +169,7 @@ def _call_groq(question: str, system_prompt: str, config: dict) -> str | None:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": question},
                 ],
-                "max_tokens": 20,
+                "max_tokens": 50,
                 "temperature": 0.1,
             },
             timeout=10,
@@ -160,7 +204,7 @@ def _call_openrouter(question: str, system_prompt: str, config: dict) -> str | N
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": question},
                     ],
-                    "max_tokens": 20,
+                    "max_tokens": 50,
                     "temperature": 0.1,
                 },
                 timeout=10,
@@ -182,8 +226,7 @@ def llm_answer(
     available_options: list[str] | None = None,
 ) -> str | None:
     """Call LLM to answer questions. Tries Groq first, then OpenRouter."""
-    resume = profile.get("resume_summary", "")
-    system_prompt = _build_system_prompt(resume, available_options)
+    system_prompt = _build_system_prompt(profile, available_options)
 
     # Try Groq first (fast, reliable)
     answer = _call_groq(question, system_prompt, config)
