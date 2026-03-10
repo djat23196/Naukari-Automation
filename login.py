@@ -1,7 +1,10 @@
+import logging
 import random
 import time
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
+
+logger = logging.getLogger(__name__)
 
 
 LOGIN_URL = "https://www.naukri.com/nlogin/login"
@@ -44,11 +47,11 @@ def dismiss_popups(page: Page):
 
 def login(page: Page, email: str, password: str) -> bool:
     """Log in to Naukri.com. Returns True on success."""
-    print("[*] Navigating to Naukri login page...")
+    logger.info("Navigating to Naukri login page...")
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     human_delay()
 
-    print("[*] Filling credentials...")
+    logger.info("Filling credentials...")
     # Target the login form inputs specifically to avoid matching the navbar search bar
     email_input = page.locator('form input[placeholder*="Email" i], form input[type="text"][placeholder*="ID" i]').first
     human_type(page, email_input, email)
@@ -58,22 +61,27 @@ def login(page: Page, email: str, password: str) -> bool:
     human_type(page, password_input, password)
     human_delay(0.5, 1.0)
 
-    print("[*] Clicking login button...")
+    logger.info("Clicking login button...")
     login_btn = page.locator(
         'button:has-text("Login"), button[type="submit"]'
     ).first
     login_btn.click()
 
-    print("[*] Waiting for dashboard to load...")
+    logger.info("Waiting for dashboard to load...")
     try:
         page.wait_for_url(f"**/{DASHBOARD_URL_FRAGMENT}**", timeout=30_000)
     except PlaywrightTimeout:
         if "login" in page.url.lower():
-            print("[!] Login may have failed — still on login page.")
+            logger.warning("Login may have failed — still on login page.")
             return False
 
     human_delay()
     dismiss_popups(page)
 
-    print("[+] Login successful!")
+    # Final validation: ensure we're actually on the dashboard
+    if DASHBOARD_URL_FRAGMENT not in page.url.lower():
+        logger.error(f"Login validation failed. Expected dashboard URL fragment '{DASHBOARD_URL_FRAGMENT}', but got: {page.url}")
+        return False
+
+    logger.info("Login successful!")
     return True

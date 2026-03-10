@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import List
+from urllib.parse import quote_plus
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from login import human_delay
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,8 +40,8 @@ def build_search_url(
         base += f"-in-{loc_slug}"
 
     params: list[str] = []
-    params.append(f"k={keywords.replace(' ', '+')}")
-    params.append(f"l={location.replace(' ', '+')}")
+    params.append(f"k={quote_plus(keywords)}")
+    params.append(f"l={quote_plus(location)}")
     params.append(f"experience={experience_min}")
     params.append(f"nignbeam_7=1")  # sort by relevance
 
@@ -75,7 +80,10 @@ def extract_job_listings(page: Page) -> List[JobListing]:
             job_id = card.get_attribute("data-job-id") or ""
             if not job_id:
                 match = re.search(r"/job-listings?-.*?-(\d+)\b", link)
-                job_id = match.group(1) if match else f"idx-{i}"
+                if match:
+                    job_id = match.group(1)
+                else:
+                    job_id = hashlib.md5(link.encode()).hexdigest()[:16]
 
             listings.append(
                 JobListing(
@@ -86,8 +94,11 @@ def extract_job_listings(page: Page) -> List[JobListing]:
                     element_index=i,
                 )
             )
-        except (PlaywrightTimeout, Exception) as exc:
-            print(f"  [!] Could not parse job card #{i}: {exc}")
+        except PlaywrightTimeout:
+            logger.debug(f"Timeout parsing job card #{i}")
+            continue
+        except Exception as exc:
+            logger.warning(f"Error parsing job card #{i}: {exc}")
             continue
 
     return listings
@@ -103,7 +114,7 @@ def search_jobs(page: Page, config: dict) -> List[JobListing]:
         freshness=config.get("freshness"),
         page_number=1,
     )
-    print(f"[*] Searching: {url}")
+    logger.info(f"Searching: {url}")
     page.goto(url, wait_until="domcontentloaded")
     human_delay(2, 4)
 
@@ -113,7 +124,7 @@ def search_jobs(page: Page, config: dict) -> List[JobListing]:
     )
 
     listings = extract_job_listings(page)
-    print(f"[+] Found {len(listings)} jobs on page 1")
+    logger.info(f"Found {len(listings)} jobs on page 1")
     return listings
 
 
@@ -127,7 +138,7 @@ def go_to_next_page(page: Page, page_number: int, config: dict) -> bool:
         freshness=config.get("freshness"),
         page_number=page_number,
     )
-    print(f"[*] Going to page {page_number}...")
+    logger.info(f"Going to page {page_number}...")
     page.goto(url, wait_until="domcontentloaded")
     human_delay(2, 4)
 
@@ -138,5 +149,5 @@ def go_to_next_page(page: Page, page_number: int, config: dict) -> bool:
         )
         return True
     except PlaywrightTimeout:
-        print(f"[!] No results found on page {page_number}")
+        logger.warning(f"No results found on page {page_number}")
         return False

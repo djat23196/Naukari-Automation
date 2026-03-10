@@ -1,10 +1,13 @@
 """Naukri chatbot handler — detects and answers chatbot questions after clicking Apply."""
 from __future__ import annotations
 
+import logging
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from answer_engine import answer_question, rule_answer, llm_answer
 from login import human_delay, human_type
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants: confirmed Naukri chatbot selectors (verified March 2026)
@@ -259,10 +262,10 @@ def snapshot_panel(page: Page) -> dict | None:
             q = result["question"][:60]
             opts = [o["text"] for o in result.get("options", [])][:4]
             ti = bool(result.get("text_input"))
-            print(f"    [chat] Snapshot: Q=\"{q}\" opts={opts} text={ti}")
+            logger.debug(f"Snapshot: Q=\"{q}\" opts={opts} text={ti}")
         return result
     except Exception as exc:
-        print(f"    [chat] Snapshot error: {exc}")
+        logger.error(f"Snapshot error: {exc}")
         return None
 
 
@@ -291,7 +294,7 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
         return None, None
     q_lower = question.lower()
     if any(p in q_lower for p in _METADATA_RE_PATTERNS):
-        print(f"    [chat] Rejected metadata question: {question[:50]}")
+        logger.debug(f"Rejected metadata question: {question[:50]}")
         return None, None
 
     # --- Path A: clickable options exist ---
@@ -303,7 +306,7 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
         if cfg:
             m = _best_option_match(cfg, options)
             if m:
-                print(f"    [chat] A (config→{m['type']}): {m['text']}")
+                logger.debug(f"A (config→{m['type']}): {m['text']}")
                 return m["text"], f"click_{m['type']}"
 
         # A2: rule engine
@@ -311,7 +314,7 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
         if rule:
             m = _best_option_match(rule, options)
             if m:
-                print(f"    [chat] A (rule→{m['type']}): {m['text']}")
+                logger.debug(f"A (rule→{m['type']}): {m['text']}")
                 return m["text"], f"click_{m['type']}"
 
         # A3: LLM with options
@@ -319,26 +322,26 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
         if llm:
             m = _best_option_match(llm, options)
             if m:
-                print(f"    [chat] A (LLM→{m['type']}): {m['text']}")
+                logger.debug(f"A (LLM→{m['type']}): {m['text']}")
                 return m["text"], f"click_{m['type']}"
 
         # Fall through to text if available
         if not has_text:
             if has_skip:
-                print(f"    [chat] No match for options, clicking Skip")
+                logger.debug(f"No match for options, clicking Skip")
                 return "__SKIP__", "click_skip"
-            print(f"    [chat] FAILED — no match: {option_texts[:6]}")
+            logger.warning(f"FAILED — no match: {option_texts[:6]}")
             return None, None
 
     # --- Path B: text input ---
     if has_text:
         answer = answer_question(question, config)
-        print(f"    [chat] A (text): {answer}")
+        logger.debug(f"A (text): {answer}")
         return answer, "text"
 
     # --- Path C: skip ---
     if has_skip:
-        print(f"    [chat] No input available, clicking Skip")
+        logger.debug(f"No input available, clicking Skip")
         return "__SKIP__", "click_skip"
 
     return None, None
@@ -355,7 +358,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
             el = page.locator('[data-nk-input="1"]').first
             try:
                 if not el.is_visible(timeout=2000):
-                    print("    [chat] Text input not visible")
+                    logger.debug("Text input not visible")
                     return False
             except (PlaywrightTimeout, Exception):
                 return False
@@ -385,7 +388,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
                         label.scroll_into_view_if_needed(timeout=2000)
                         label.click(timeout=3000)
                         radio_clicked = True
-                        print(f"    [chat] Radio clicked via Playwright: {text}")
+                        logger.debug(f"Radio clicked via Playwright: {text}")
                         break
                 except (PlaywrightTimeout, Exception):
                     continue
@@ -407,7 +410,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
                 }""", answer)
 
             if not radio_clicked:
-                print(f"    [chat] Radio click failed for: {answer}")
+                logger.warning(f"Radio click failed for: {answer}")
                 return False
 
             # Step 2: Wait for Save button to appear, then click via Playwright
@@ -421,7 +424,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
                     save.scroll_into_view_if_needed(timeout=2000)
                     save.click(timeout=3000)
                     save_clicked = True
-                    print("    [chat] Save clicked via Playwright")
+                    logger.debug("Save clicked via Playwright")
             except (PlaywrightTimeout, Exception):
                 pass
 
@@ -441,10 +444,10 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
                     return false;
                 }""")
                 if save_clicked:
-                    print("    [chat] Save clicked via JS fallback")
+                    logger.debug("Save clicked via JS fallback")
 
             if not save_clicked:
-                print("    [chat] Save button not found after radio click")
+                logger.warning("Save button not found after radio click")
 
             human_delay(1.0, 1.5)
             return True
@@ -472,7 +475,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
                         label.scroll_into_view_if_needed(timeout=1000)
                         label.click(timeout=2000)
                         clicked_any = True
-                        print(f"    [chat] Checkbox clicked: {text}")
+                        logger.debug(f"Checkbox clicked: {text}")
                 except (PlaywrightTimeout, Exception):
                     continue
 
@@ -502,7 +505,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
                     if save.is_visible(timeout=3000):
                         save.scroll_into_view_if_needed(timeout=2000)
                         save.click(timeout=3000)
-                        print("    [chat] Save clicked after checkbox")
+                        logger.debug("Save clicked after checkbox")
                 except (PlaywrightTimeout, Exception):
                     page.evaluate("""() => {
                         const panel = document.querySelector('.chatbot_Drawer');
@@ -521,7 +524,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
             return page.evaluate(CLICK_SKIP_JS)
 
     except Exception as exc:
-        print(f"    [chat] Submit error ({method}): {exc}")
+        logger.error(f"Submit error ({method}): {exc}")
     return False
 
 
@@ -540,7 +543,7 @@ def handle_chatbot(page: Page, config: dict) -> str:
     if not snapshot:
         return "none"
 
-    print("    [chat] Chatbot detected (.chatbot_Drawer)")
+    logger.info("Chatbot detected (.chatbot_Drawer)")
 
     max_rounds = 10
     last_question = ""
@@ -561,7 +564,8 @@ def handle_chatbot(page: Page, config: dict) -> str:
         if question == last_question:
             stale_count += 1
             if stale_count >= 2:
-                print("    [chat] Stale — same question repeated, breaking")
+                logger.warning("Chatbot stale — same question repeated, breaking")
+                failed += 1
                 break
             continue
         stale_count = 0
@@ -570,9 +574,9 @@ def handle_chatbot(page: Page, config: dict) -> str:
         if not question:
             continue
 
-        print(f"    [chat] Q: {question[:80]}")
+        logger.debug(f"Q: {question[:80]}")
         if snapshot.get("options"):
-            print(f"    [chat] Options: {[o['text'] for o in snapshot['options'][:6]]}")
+            logger.debug(f"Options: {[o['text'] for o in snapshot['options'][:6]]}")
 
         answer, method = decide_answer(snapshot, config)
 
@@ -581,10 +585,10 @@ def handle_chatbot(page: Page, config: dict) -> str:
             if ok:
                 answered += 1
             else:
-                print(f"    [chat] Submit failed: {answer} via {method}")
+                logger.warning(f"Submit failed: {answer} via {method}")
                 failed += 1
         else:
-            print(f"    [chat] No answer found for: {question[:60]}")
+            logger.warning(f"No answer found for: {question[:60]}")
             failed += 1
 
     # Click Save (scoped to chatbot panel)
@@ -592,9 +596,9 @@ def handle_chatbot(page: Page, config: dict) -> str:
         saved = page.evaluate(CLICK_SAVE_JS)
         if saved:
             human_delay(0.5, 1.0)
-            print("    [chat] Clicked Save (in panel)")
+            logger.debug("Clicked Save (in panel)")
     except Exception:
         pass
 
-    print(f"    [chat] Result: {answered} answered, {failed} failed")
+    logger.info(f"Chatbot result: {answered} answered, {failed} failed")
     return "partial" if failed > 0 else "completed"
