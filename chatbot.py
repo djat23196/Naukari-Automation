@@ -48,6 +48,7 @@ SNAPSHOT_JS = """() => {
     const options = [];
     const skipOptionRe = /skip\\s*(this)?\\s*question/i;
     const seenOpts = new Set();
+    let hasSkip = false;
 
     // Naukri-specific radio containers
     panel.querySelectorAll('.ssrc__radio-btn-container').forEach(container => {
@@ -88,7 +89,6 @@ SNAPSHOT_JS = """() => {
     // --- Button options (not system buttons) ---
     const sysRe = /^(save|submit|close|cancel|apply|ok|done|x|×)$/i;
     const skipRe = /skip\\s*(this)?\\s*question/i;
-    let hasSkip = false;
     panel.querySelectorAll('button, [role=button]').forEach(btn => {
         const t = btn.textContent.trim();
         const r = btn.getBoundingClientRect();
@@ -275,6 +275,7 @@ def snapshot_panel(page: Page) -> dict | None:
 
 _METADATA_RE_PATTERNS = [
     "applicant", "days ago", "opening", "posted", "early applicant",
+    "thank you", "thanks for", "responses have been",
 ]
 
 
@@ -573,6 +574,11 @@ def handle_chatbot(page: Page, config: dict) -> str:
 
         if not question:
             continue
+
+        q_lower = question.lower()
+        if any(p in q_lower for p in _METADATA_RE_PATTERNS):
+            logger.info(f"Chatbot completion detected: {question[:60]}")
+            break
 
         logger.debug(f"Q: {question[:80]}")
         if snapshot.get("options"):

@@ -6,6 +6,19 @@ import os
 import httpx
 
 
+def validate_api_keys() -> tuple[bool, str]:
+    """Check that at least one LLM API key is configured."""
+    groq = os.getenv("GROQ_API_KEY", "")
+    openrouter = os.getenv("OPENROUTER_API_KEY", "")
+    if groq and openrouter:
+        return True, "API keys: Groq + OpenRouter configured"
+    if groq:
+        return True, "API keys: Groq configured (no OpenRouter fallback)"
+    if openrouter:
+        return True, "API keys: OpenRouter configured (no Groq primary)"
+    return False, "No LLM API keys found. Set GROQ_API_KEY or OPENROUTER_API_KEY in .env"
+
+
 def answer_question(
     question: str,
     config: dict,

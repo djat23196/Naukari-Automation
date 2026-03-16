@@ -139,7 +139,11 @@ def go_to_next_page(page: Page, page_number: int, config: dict) -> bool:
         page_number=page_number,
     )
     logger.info(f"Going to page {page_number}...")
-    page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+    except (PlaywrightTimeout, Exception) as exc:
+        logger.warning(f"Page {page_number} navigation failed: {exc}")
+        return False
     human_delay(2, 4)
 
     try:
