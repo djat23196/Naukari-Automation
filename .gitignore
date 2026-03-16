@@ -9,3 +9,8 @@ venv/
 .DS_Store
 .claude/
 AI_Interview_Tracker.xlsx
+AI_Interview_Tracker.xlsx.backup
+.profile.json
+.session.json
+naukri_bot.log
+*.pdf
