@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import signal
 import sys
 
 from dotenv import load_dotenv
@@ -198,61 +199,76 @@ def main():
         seen_jobs: set[tuple[str, str]] = set()
         context_app_count = 0
 
+        def _ensure_page():
+            """Return a working page, recreating context if needed."""
+            nonlocal page, context, context_app_count
+            if not page.is_closed():
+                return page
+            logger.warning("Page closed — recreating...")
+            try:
+                page = context.new_page()
+            except Exception:
+                logger.warning("Context also dead — recreating context...")
+                context = create_context(browser, storage_state=SESSION_FILE)
+                page = context.new_page()
+                context_app_count = 0
+            return page
+
         for search_idx, (keyword, location) in enumerate(searches, 1):
             logger.info(f"\n{'='*50}")
             logger.info(f"  SEARCH {search_idx}/{total_searches}: {keyword} in {location or 'Any'}")
             logger.info(f"{'='*50}")
 
             search_config = {**config, "keywords": keyword, "location": location}
+
             try:
-                jobs = search_jobs(page, search_config)
-            except TargetClosedError:
-                logger.warning("Page closed before search — recreating...")
-                page = context.new_page()
-                jobs = search_jobs(page, search_config)
+                try:
+                    jobs = search_jobs(page, search_config)
+                except (TargetClosedError, Exception) as exc:
+                    if not isinstance(exc, TargetClosedError):
+                        logger.warning(f"Search error: {exc}")
+                    page = _ensure_page()
+                    jobs = search_jobs(page, search_config)
 
-            for page_num in range(1, max_pages + 1):
-                if page_num > 1:
-                    try:
-                        has_next = go_to_next_page(page, page_num, search_config)
-                    except TargetClosedError:
-                        logger.warning("Page closed before pagination — recreating...")
-                        page = context.new_page()
-                        has_next = go_to_next_page(page, page_num, search_config)
-                    if not has_next:
-                        logger.info(f"No more pages after page {page_num - 1}.")
+                for page_num in range(1, max_pages + 1):
+                    if page_num > 1:
+                        try:
+                            has_next = go_to_next_page(page, page_num, search_config)
+                        except (TargetClosedError, Exception) as exc:
+                            if not isinstance(exc, TargetClosedError):
+                                logger.warning(f"Pagination error: {exc}")
+                            page = _ensure_page()
+                            has_next = go_to_next_page(page, page_num, search_config)
+                        if not has_next:
+                            logger.info(f"No more pages after page {page_num - 1}.")
+                            break
+                        jobs = extract_job_listings(page)
+                        logger.info(f"Found {len(jobs)} jobs on page {page_num}")
+
+                    if not jobs:
+                        logger.info(f"No jobs found on page {page_num}. Stopping.")
                         break
-                    jobs = extract_job_listings(page)
-                    logger.info(f"Found {len(jobs)} jobs on page {page_num}")
 
-                if not jobs:
-                    logger.info(f"No jobs found on page {page_num}. Stopping.")
-                    break
+                    page_summary = apply_to_jobs(page, jobs, config, seen_jobs=seen_jobs)
+                    for key in total_summary:
+                        total_summary[key] += page_summary[key]
 
-                page_summary = apply_to_jobs(page, jobs, config, seen_jobs=seen_jobs)
-                for key in total_summary:
-                    total_summary[key] += page_summary[key]
+                    page = _ensure_page()
 
-                # Recover if page was closed during apply (e.g. by Naukri's JS)
-                if page.is_closed():
-                    logger.warning("Page was closed during applications — recreating...")
-                    try:
-                        page = context.new_page()
-                    except Exception:
-                        logger.warning("Context also closed — recreating context...")
+                    # Context rotation
+                    context_app_count += page_summary["applied"]
+                    if context_app_count >= context_recycle_every:
+                        logger.info(f"Recycling browser context after {context_app_count} applications...")
+                        context.storage_state(path=SESSION_FILE)
+                        context.close()
                         context = create_context(browser, storage_state=SESSION_FILE)
                         page = context.new_page()
                         context_app_count = 0
 
-                # Context rotation
-                context_app_count += page_summary["applied"]
-                if context_app_count >= context_recycle_every:
-                    logger.info(f"Recycling browser context after {context_app_count} applications...")
-                    context.storage_state(path=SESSION_FILE)
-                    context.close()
-                    context = create_context(browser, storage_state=SESSION_FILE)
-                    page = context.new_page()
-                    context_app_count = 0
+            except Exception as exc:
+                logger.error(f"Search {search_idx} failed: {exc} — skipping to next")
+                page = _ensure_page()
+                continue
 
         browser.close()
 
@@ -269,4 +285,18 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    def _signal_handler(signum, frame):
+        name = signal.Signals(signum).name
+        logging.getLogger(__name__).error(f"Received {name} (signal {signum}) — exiting")
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        logging.getLogger(__name__).error(f"Fatal error: {exc}", exc_info=True)
+        sys.exit(1)
