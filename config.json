@@ -29,14 +29,14 @@
   "freshness": 3,
   "max_pages": 2,
   "profile": {
-    "total_experience": "5+",
-    "current_ctc": "12 LPA",
-    "expected_ctc": "18 LPA",
+    "total_experience": "5.5",
+    "current_ctc": "17 LPA",
+    "expected_ctc": "22 LPA",
     "notice_period": "30 days",
     "current_location": "Bangalore",
     "current_company": "Acies Global",
     "qualification": "Bachelor of Engineering",
-    "default_experience": "N/A",
+    "default_experience": "3",
     "skills": {
       "python": 5,
       "sql": 5,
@@ -109,10 +109,23 @@
       "async python": 2,
       "tensorflow": 3,
       "numpy": 5,
-      "matplotlib": 4
+      "matplotlib": 4,
+      "clickhouse": 1,
+      "densenet": 2,
+      "resnet": 2,
+      "nltk": 3,
+      "tf-idf": 3,
+      "azure document intelligence": 1.5,
+      "power bi": 2,
+      "powerbi": 2,
+      "pyarrow": 2,
+      "alembic": 1,
+      "sentry": 1,
+      "launchdarkly": 1,
+      "aho-corasick": 2
     },
     "native_location": "Maharashtra",
-    "resume_summary": "AI/ML Engineer and Data Scientist with 5+ years experience. Currently Sr. Data Scientist at Acies Global, Bangalore. Native of Maharashtra (Pune/Mumbai). Willing to relocate anywhere or work remotely. Built production multi-agent AI systems using LangGraph, LangChain, AWS Bedrock. Specialized in LLM orchestration, RAG, prompt engineering, NLP pipelines (7B+ documents), Document AI (90-95% accuracy), and computer vision (YOLO, Detectron, CNN). Expert in Python, PyTorch, Transformers, XGBoost, Scikit-learn, HuggingFace. Strong in PostgreSQL, PGVector, ChromaDB, Apache Spark, Databricks, Docker, Kubernetes, CI/CD. B.E. from Savitribai Phule Pune University (2016-2020)."
+    "resume_summary": "AI/ML Engineer and Data Scientist with 5.5 years experience building production multi-agent AI systems, large-scale ML pipelines, and computer vision solutions. Currently Sr. Data Scientist at Acies Global, Bangalore. Native of Maharashtra (Pune/Mumbai). Willing to relocate anywhere or work remotely. Specialized in LLM orchestration (LangGraph, LangChain, AWS Bedrock), NLP pipelines processing 7B+ documents, Document AI achieving 90-95% accuracy, and evaluation frameworks with observability infrastructure (Datadog, Prometheus, LangSmith). Expert in Python, PyTorch, Transformers, XGBoost, Scikit-learn, HuggingFace, RAG, prompt engineering, multi-agent orchestration. Strong in PostgreSQL, PGVector, ChromaDB, ClickHouse, Apache Spark, Databricks, Docker, Kubernetes, CI/CD. Experienced in mentoring engineers and owning monitoring/evaluation infrastructure. B.E. from Savitribai Phule Pune University (2016-2020)."
   },
   "chatbot_option_answers": {
     "notice period": "1 month",

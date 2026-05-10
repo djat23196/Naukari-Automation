@@ -159,6 +159,28 @@ CLICK_RADIO_JS = """(optionText) => {
     return false;
 }"""
 
+CLICK_CHECKBOX_JS = """(answerText) => {
+    const drawer = document.querySelector('.chatbot_Drawer')
+        || document.querySelector('[data-nk-panel]');
+    if (!drawer) return false;
+    const lo = answerText.toLowerCase();
+    let clicked = false;
+
+    for (const cb of drawer.querySelectorAll('input[type=checkbox]')) {
+        const lbl = cb.closest('label')
+            || (cb.id ? drawer.querySelector('label[for="'+cb.id+'"]') : null)
+            || cb.parentElement;
+        const t = (lbl?.textContent || '').trim().toLowerCase();
+        if (!t) continue;
+        if (t === lo || t.includes(lo) || lo.includes(t)) {
+            (lbl || cb.parentElement).scrollIntoView({block: 'center'});
+            cb.click();
+            clicked = true;
+        }
+    }
+    return clicked;
+}"""
+
 CLICK_BUTTON_JS = """(answerText) => {
     const panel = document.querySelector('[data-nk-panel]');
     if (!panel) return false;
@@ -454,68 +476,56 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
             return True
 
         if method == "click_checkbox":
-            # Click matching checkbox(es) via Playwright, then Save
             answer_lower = answer.lower()
             checkboxes = page.locator('.chatbot_Drawer input[type=checkbox]')
+            cb_count = checkboxes.count()
+            logger.info(f"Checkbox: looking for '{answer}', found {cb_count} inputs")
             clicked_any = False
-            for i in range(checkboxes.count()):
+            for i in range(cb_count):
                 cb = checkboxes.nth(i)
                 try:
-                    # Get the label text for this checkbox
                     parent = cb.locator("..")
                     label = parent.locator("label").first
                     text = ""
+                    has_label = False
                     try:
                         text = label.inner_text(timeout=500).strip().lower()
+                        has_label = True
                     except Exception:
                         text = parent.inner_text(timeout=500).strip().lower()
                     if not text:
                         continue
-                    # Click if it matches our answer (could match multiple cities)
                     if answer_lower in text or text in answer_lower:
-                        label.scroll_into_view_if_needed(timeout=1000)
-                        label.click(timeout=2000)
+                        click_target = label if has_label else parent
+                        click_target.scroll_into_view_if_needed(timeout=1000)
+                        click_target.click(timeout=2000)
                         clicked_any = True
-                        logger.debug(f"Checkbox clicked: {text}")
-                except (PlaywrightTimeout, Exception):
+                        logger.info(f"Checkbox clicked via {'label' if has_label else 'parent'}: {text}")
+                except (PlaywrightTimeout, Exception) as exc:
+                    logger.info(f"Checkbox {i} Playwright click failed: {exc}")
                     continue
 
             if not clicked_any:
-                # Fallback: JS click by value/id
-                clicked_any = page.evaluate("""(answerText) => {
-                    const panel = document.querySelector('[data-nk-panel]');
-                    if (!panel) return false;
-                    const lo = answerText.toLowerCase();
-                    let clicked = false;
-                    for (const cb of panel.querySelectorAll('input[type=checkbox]')) {
-                        const lbl = cb.closest('label') || cb.parentElement;
-                        const t = (lbl?.textContent || '').trim().toLowerCase();
-                        if (t.includes(lo) || lo.includes(t)) {
-                            cb.click();
-                            clicked = true;
-                        }
-                    }
-                    return clicked;
-                }""", answer)
+                logger.info("Checkbox: falling back to JS click")
+                clicked_any = page.evaluate(CLICK_CHECKBOX_JS, answer)
 
             if clicked_any:
-                # Click Save after checkbox selection
-                human_delay(0.5, 1.0)
+                human_delay(1.0, 2.0)
+                save_clicked = False
                 try:
                     save = page.locator('.chatbot_Drawer :text-is("Save")').last
                     if save.is_visible(timeout=3000):
                         save.scroll_into_view_if_needed(timeout=2000)
                         save.click(timeout=3000)
+                        save_clicked = True
                         logger.debug("Save clicked after checkbox")
                 except (PlaywrightTimeout, Exception):
-                    page.evaluate("""() => {
-                        const panel = document.querySelector('.chatbot_Drawer');
-                        if (!panel) return;
-                        for (const el of panel.querySelectorAll('button, div, span')) {
-                            if (/^save$/i.test(el.textContent.trim())) { el.scrollIntoView(); el.click(); return; }
-                        }
-                    }""")
+                    pass
+                if not save_clicked:
+                    page.evaluate(CLICK_SAVE_JS)
                 human_delay(1.0, 1.5)
+            else:
+                logger.warning(f"Checkbox click failed for: {answer}")
             return clicked_any
 
         if method == "click_button":

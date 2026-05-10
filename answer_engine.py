@@ -91,7 +91,12 @@ def rule_answer(question: str, profile: dict) -> str | None:
                                "are you available", "available for"]):
         return "Yes"
 
-    # Experience/skill-in-years questions
+    # Generic total experience questions
+    if any(kw in q for kw in ["total experience", "overall experience", "total years",
+                               "total work experience", "overall work experience"]):
+        return profile.get("total_experience", profile.get("default_experience", "3"))
+
+    # Skill-specific experience questions
     if any(kw in q for kw in ["years of experience", "experience do you have", "how many years",
                                "yrs of experience", "years experience",
                                "in years", "exposure with", "specify experience",
@@ -101,7 +106,8 @@ def rule_answer(question: str, profile: dict) -> str | None:
         for skill, years in sorted_skills:
             if skill.lower() in q:
                 return str(years)
-        return profile.get("total_experience", profile.get("default_experience", "3"))
+        # No skill matched — let the LLM decide rather than claiming total experience
+        return None
 
     return None
 
@@ -125,14 +131,17 @@ def _build_profile_block(profile: dict) -> str:
     )
 
 
-_FEW_SHOT = (
-    "\n\nExamples of expected answers:\n"
-    'Q: "How many years of experience do you have in Python?" → A: "5"\n'
-    'Q: "What is your current CTC?" → A: "12 LPA"\n'
-    'Q: "Are you willing to relocate?" → A: "Yes"\n'
-    'Q: "What is your notice period?" → A: "30 days"\n'
-    'Q: "What is your highest qualification?" → A: "Bachelor of Engineering"\n'
-)
+def _build_few_shot(profile: dict) -> str:
+    """Build few-shot examples dynamically from profile to avoid stale hardcoded values."""
+    python_yrs = profile.get("skills", {}).get("python", "5")
+    return (
+        "\n\nExamples of expected answers:\n"
+        f'Q: "How many years of experience do you have in Python?" → A: "{python_yrs}"\n'
+        f'Q: "What is your current CTC?" → A: "{profile.get("current_ctc", "17 LPA")}"\n'
+        'Q: "Are you willing to relocate?" → A: "Yes"\n'
+        f'Q: "What is your notice period?" → A: "{profile.get("notice_period", "30 days")}"\n'
+        f'Q: "What is your highest qualification?" → A: "{profile.get("qualification", "Bachelor of Engineering")}"\n'
+    )
 
 _ANSWER_HINTS = (
     "\n\nAnswer format rules:\n"
@@ -147,6 +156,7 @@ _ANSWER_HINTS = (
 
 def _build_system_prompt(profile: dict, available_options: list[str] | None) -> str:
     profile_block = _build_profile_block(profile)
+    few_shot = _build_few_shot(profile)
 
     if available_options:
         return (
@@ -154,13 +164,13 @@ def _build_system_prompt(profile: dict, available_options: list[str] | None) -> 
             f"You MUST pick EXACTLY one of these options: {available_options}.\n"
             "Return ONLY the exact option text, nothing else.\n\n"
             f"Candidate profile:\n{profile_block}"
-            f"{_FEW_SHOT}"
+            f"{few_shot}"
         )
     return (
         "You are answering a recruiter's chatbot question for a job application.\n"
         "Answer in 1-5 words only. No explanations, no sentences. Just the answer.\n\n"
         f"Candidate profile:\n{profile_block}"
-        f"{_FEW_SHOT}"
+        f"{few_shot}"
         f"{_ANSWER_HINTS}"
     )
 
