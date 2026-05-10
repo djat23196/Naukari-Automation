@@ -5,6 +5,7 @@ import logging
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from answer_engine import answer_question, rule_answer, llm_answer
+from chatbot_logger import log_interaction
 from login import human_delay, human_type
 
 logger = logging.getLogger(__name__)
@@ -301,10 +302,12 @@ _METADATA_RE_PATTERNS = [
 ]
 
 
-def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]:
-    """Decide what to answer and how. Returns (answer, method) or (None, None).
+def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None, str]:
+    """Decide what to answer and how.
 
+    Returns (answer, method, source).
     Methods: 'text', 'click_radio', 'click_button', 'click_checkbox', 'click_skip'
+    Source: 'config', 'rule', 'llm_groq', 'llm_openrouter', 'default', 'skip', 'none'
     """
     question = snapshot["question"]
     options = snapshot.get("options", [])
@@ -314,11 +317,11 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
 
     # Guard: reject metadata-like text as questions
     if not question or len(question) < 5:
-        return None, None
+        return None, None, "none"
     q_lower = question.lower()
     if any(p in q_lower for p in _METADATA_RE_PATTERNS):
         logger.debug(f"Rejected metadata question: {question[:50]}")
-        return None, None
+        return None, None, "none"
 
     # --- Path A: clickable options exist ---
     if options:
@@ -330,7 +333,7 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
             m = _best_option_match(cfg, options)
             if m:
                 logger.debug(f"A (config→{m['type']}): {m['text']}")
-                return m["text"], f"click_{m['type']}"
+                return m["text"], f"click_{m['type']}", "config"
 
         # A2: rule engine
         rule = rule_answer(question, profile)
@@ -338,36 +341,36 @@ def decide_answer(snapshot: dict, config: dict) -> tuple[str | None, str | None]
             m = _best_option_match(rule, options)
             if m:
                 logger.debug(f"A (rule→{m['type']}): {m['text']}")
-                return m["text"], f"click_{m['type']}"
+                return m["text"], f"click_{m['type']}", "rule"
 
         # A3: LLM with options
-        llm = llm_answer(question, profile, config, available_options=option_texts)
-        if llm:
-            m = _best_option_match(llm, options)
+        llm_ans, llm_src = llm_answer(question, profile, config, available_options=option_texts)
+        if llm_ans:
+            m = _best_option_match(llm_ans, options)
             if m:
                 logger.debug(f"A (LLM→{m['type']}): {m['text']}")
-                return m["text"], f"click_{m['type']}"
+                return m["text"], f"click_{m['type']}", llm_src
 
         # Fall through to text if available
         if not has_text:
             if has_skip:
                 logger.debug(f"No match for options, clicking Skip")
-                return "__SKIP__", "click_skip"
+                return "__SKIP__", "click_skip", "skip"
             logger.warning(f"FAILED — no match: {option_texts[:6]}")
-            return None, None
+            return None, None, "none"
 
     # --- Path B: text input ---
     if has_text:
-        answer = answer_question(question, config)
+        answer, source = answer_question(question, config)
         logger.debug(f"A (text): {answer}")
-        return answer, "text"
+        return answer, "text", source
 
     # --- Path C: skip ---
     if has_skip:
         logger.debug(f"No input available, clicking Skip")
-        return "__SKIP__", "click_skip"
+        return "__SKIP__", "click_skip", "skip"
 
-    return None, None
+    return None, None, "none"
 
 
 # ---------------------------------------------------------------------------
@@ -561,19 +564,42 @@ def handle_chatbot(page: Page, config: dict, job_title: str = "", company: str =
             break
 
         logger.debug(f"Q: {question[:80]}")
-        if snapshot.get("options"):
-            logger.debug(f"Options: {[o['text'] for o in snapshot['options'][:6]]}")
+        option_texts = [o["text"] for o in snapshot.get("options", [])]
+        if option_texts:
+            logger.debug(f"Options: {option_texts[:6]}")
 
-        answer, method = decide_answer(snapshot, config)
+        answer, method, source = decide_answer(snapshot, config)
 
         if answer and method:
             ok = submit_answer(page, answer, method)
+            log_interaction(
+                job_title=job_title,
+                company=company,
+                question=question,
+                options=option_texts or None,
+                answer=answer,
+                source=source,
+                method=method,
+                success=ok,
+                round_num=_round,
+            )
             if ok:
                 answered += 1
             else:
                 logger.warning(f"Submit failed: {answer} via {method}")
                 failed += 1
         else:
+            log_interaction(
+                job_title=job_title,
+                company=company,
+                question=question,
+                options=option_texts or None,
+                answer=None,
+                source=source,
+                method=None,
+                success=False,
+                round_num=_round,
+            )
             logger.warning(f"No answer found for: {question[:60]}")
             failed += 1
 
