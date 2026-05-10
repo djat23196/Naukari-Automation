@@ -157,7 +157,7 @@ def _click_apply(page: Page) -> bool:
     return False
 
 
-def _handle_apply_modal(page: Page, config: dict) -> str:
+def _handle_apply_modal(page: Page, config: dict, job_title: str = "", company: str = "") -> str:
     """Handle post-click modals like 'confirm resume' or chatbot questions.
 
     Returns: 'completed', 'partial', or 'no_modal'.
@@ -165,7 +165,7 @@ def _handle_apply_modal(page: Page, config: dict) -> str:
     human_delay(0, 3.0)
 
     # Try chatbot first (delegated to chatbot.py)
-    chatbot_result = handle_chatbot(page, config)
+    chatbot_result = handle_chatbot(page, config, job_title=job_title, company=company)
     if chatbot_result != "none":
         return chatbot_result
 
@@ -229,7 +229,7 @@ def apply_to_job(page: Page, job: JobListing, config: dict) -> str:
             return "skipped_external"
 
         if _click_apply(page):
-            modal_result = _handle_apply_modal(page, config)
+            modal_result = _handle_apply_modal(page, config, job_title=job.title, company=job.company)
 
             if modal_result == "partial":
                 print(f"  [!] Chatbot incomplete — application NOT submitted")

@@ -13,4 +13,5 @@ AI_Interview_Tracker.xlsx.backup
 .profile.json
 .session.json
 naukri_bot.log
+logs/
 *.pdf

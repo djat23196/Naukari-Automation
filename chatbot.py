@@ -476,38 +476,8 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
             return True
 
         if method == "click_checkbox":
-            answer_lower = answer.lower()
-            checkboxes = page.locator('.chatbot_Drawer input[type=checkbox]')
-            cb_count = checkboxes.count()
-            logger.info(f"Checkbox: looking for '{answer}', found {cb_count} inputs")
-            clicked_any = False
-            for i in range(cb_count):
-                cb = checkboxes.nth(i)
-                try:
-                    parent = cb.locator("..")
-                    label = parent.locator("label").first
-                    text = ""
-                    has_label = False
-                    try:
-                        text = label.inner_text(timeout=500).strip().lower()
-                        has_label = True
-                    except Exception:
-                        text = parent.inner_text(timeout=500).strip().lower()
-                    if not text:
-                        continue
-                    if answer_lower in text or text in answer_lower:
-                        click_target = label if has_label else parent
-                        click_target.scroll_into_view_if_needed(timeout=1000)
-                        click_target.click(timeout=2000)
-                        clicked_any = True
-                        logger.info(f"Checkbox clicked via {'label' if has_label else 'parent'}: {text}")
-                except (PlaywrightTimeout, Exception) as exc:
-                    logger.info(f"Checkbox {i} Playwright click failed: {exc}")
-                    continue
-
-            if not clicked_any:
-                logger.info("Checkbox: falling back to JS click")
-                clicked_any = page.evaluate(CLICK_CHECKBOX_JS, answer)
+            clicked_any = page.evaluate(CLICK_CHECKBOX_JS, answer)
+            logger.info(f"Checkbox JS click for '{answer}': {'OK' if clicked_any else 'FAIL'}")
 
             if clicked_any:
                 human_delay(1.0, 2.0)

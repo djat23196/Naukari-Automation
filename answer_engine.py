@@ -23,21 +23,25 @@ def answer_question(
     question: str,
     config: dict,
     available_options: list[str] | None = None,
-) -> str:
-    """Answer a chatbot question using rules first, LLM fallback."""
+) -> tuple[str, str]:
+    """Answer a chatbot question using rules first, LLM fallback.
+
+    Returns (answer, source) where source is one of:
+    'rule', 'llm_groq', 'llm_openrouter', 'default'.
+    """
     profile = config.get("profile", {})
 
     answer = rule_answer(question, profile)
     if answer:
-        return answer
+        return answer, "rule"
 
-    answer = llm_answer(question, profile, config, available_options=available_options)
+    answer, source = llm_answer(question, profile, config, available_options=available_options)
     if answer:
-        return answer
+        return answer, source
 
     default = profile.get("default_experience", "3")
     print(f"    [chat] A (default): {default}")
-    return default
+    return default, "default"
 
 
 def rule_answer(question: str, profile: dict) -> str | None:
@@ -175,11 +179,11 @@ def _build_system_prompt(profile: dict, available_options: list[str] | None) -> 
     )
 
 
-def _call_groq(question: str, system_prompt: str, config: dict) -> str | None:
-    """Call Groq API (fast, reliable)."""
+def _call_groq(question: str, system_prompt: str, config: dict) -> tuple[str, str] | tuple[None, None]:
+    """Call Groq API (fast, reliable). Returns (answer, 'llm_groq') or (None, None)."""
     api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
-        return None
+        return None, None
 
     model = config.get("groq_model", "llama-3.3-70b-versatile")
     try:
@@ -201,19 +205,19 @@ def _call_groq(question: str, system_prompt: str, config: dict) -> str | None:
             answer = resp.json()["choices"][0]["message"]["content"].strip()
             if answer:
                 print(f"    [chat] A (Groq): {answer}")
-                return answer
+                return answer, "llm_groq"
         else:
             print(f"    [chat] Groq error: {resp.status_code}")
     except Exception as exc:
         print(f"    [chat] Groq exception: {exc}")
-    return None
+    return None, None
 
 
-def _call_openrouter(question: str, system_prompt: str, config: dict) -> str | None:
-    """Call OpenRouter API (fallback)."""
+def _call_openrouter(question: str, system_prompt: str, config: dict) -> tuple[str, str] | tuple[None, None]:
+    """Call OpenRouter API (fallback). Returns (answer, 'llm_openrouter') or (None, None)."""
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if not api_key:
-        return None
+        return None, None
 
     models = config.get("openrouter_models", [])
     for model in models:
@@ -236,10 +240,10 @@ def _call_openrouter(question: str, system_prompt: str, config: dict) -> str | N
                 answer = resp.json()["choices"][0]["message"]["content"].strip()
                 if answer:
                     print(f"    [chat] A (LLM {model.split('/')[0]}): {answer}")
-                    return answer
+                    return answer, "llm_openrouter"
         except Exception:
             continue
-    return None
+    return None, None
 
 
 def llm_answer(
@@ -247,18 +251,19 @@ def llm_answer(
     profile: dict,
     config: dict,
     available_options: list[str] | None = None,
-) -> str | None:
-    """Call LLM to answer questions. Tries Groq first, then OpenRouter."""
+) -> tuple[str, str] | tuple[None, None]:
+    """Call LLM to answer questions. Tries Groq first, then OpenRouter.
+
+    Returns (answer, source) or (None, None).
+    """
     system_prompt = _build_system_prompt(profile, available_options)
 
-    # Try Groq first (fast, reliable)
-    answer = _call_groq(question, system_prompt, config)
+    answer, source = _call_groq(question, system_prompt, config)
     if answer:
-        return answer
+        return answer, source
 
-    # Fallback: OpenRouter
-    answer = _call_openrouter(question, system_prompt, config)
+    answer, source = _call_openrouter(question, system_prompt, config)
     if answer:
-        return answer
+        return answer, source
 
-    return None
+    return None, None
