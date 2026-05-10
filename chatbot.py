@@ -513,7 +513,7 @@ def submit_answer(page: Page, answer: str, method: str) -> bool:
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def handle_chatbot(page: Page, config: dict) -> str:
+def handle_chatbot(page: Page, config: dict, job_title: str = "", company: str = "") -> str:
     """Detect and answer Naukri chatbot questions.
 
     Returns: 'completed', 'partial', or 'none'.
